@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+#Ignore sensible data file
+phrases.h
