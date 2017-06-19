@@ -1,4 +1,4 @@
-/**
+  /**
     RFID Terminal
 
     @author Federico Lo Grasso
@@ -12,14 +12,16 @@
 	in the card. We can modifiy it in the Mifare Classic Cards (in specials card we can do it)
 */
 
-#include <avr/wdt.h> //Watchdog
+
 #include "globals.h"
-#include <SPI.h>
-#include "MFRC522.h"
+
 
 #define DEBUG true // Debug Flag
 
 bool isMifareCard();
+void setup(void);
+void loop(void);
+
 
 void setup(void)
 {
@@ -31,6 +33,10 @@ void setup(void)
 
 	SPI.begin();		// Init SPI bus
 	mfrc522.PCD_Init(); // Init MFRC522 card
+
+	uint16_t ID = tft.readID();
+	if (ID == 0xD3D3) ID = 0x9481;                     
+	tft.begin(ID);
 
 	//Watchdog 8s
 	wdt_enable(WDTO_8S); // enable watchdog timer with 8 second timeout (max setting)
@@ -59,6 +65,7 @@ bool isMifareCard()
 {
 
 	MFRC522::PICC_Type piccType = mfrc522.PICC_GetType(mfrc522.uid.sak);
+
 	wdt_reset();
 #if DEBUG == true
 	Serial.print(F("PICC type: "));
@@ -120,8 +127,14 @@ void readCard()
 		wdt_reset();
 	}
 	// Select one of the cards
+	mfrc522.PICC_ReadCardSerial();
+	wdt_reset();
+
+	/*
 	while (!mfrc522.PICC_ReadCardSerial())
 	{
 		wdt_reset();
+		
 	}
+	*/
 }
