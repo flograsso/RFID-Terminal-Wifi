@@ -27,6 +27,8 @@
 #define RST_PIN             49           // Configurable, see typical pin layout above
 #define SDA_PIN             31          //SPI SS CHIP SELECT = 31
 
+#define UID_LENGTH 12                   //UID MAX LENGTH
+
 MFRC522 mfrc522(SDA_PIN, RST_PIN);   // Create MFRC522 instance.
 
 /*TFT DISPLAY*/
@@ -78,7 +80,7 @@ uint16_t ID;
 
 #include "Fonts/FreeMonoBold24pt7b.h"
 #include "Fonts/FreeMonoBold18pt7b.h"
-#include "Fonts/FreeMonoBold9pt7b.h"
+
 
 // Assign human-readable names to some common 16-bit color values:
 #define	BLACK   0x0000
@@ -99,5 +101,7 @@ enum screenState {
     ERROR,
     MENSAJE
 };
+
+
 
 #endif

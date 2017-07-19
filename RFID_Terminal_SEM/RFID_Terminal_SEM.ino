@@ -22,15 +22,46 @@
 		tft.println("MENSAJE"); HASTA 10 CARACTERES
 		tft.setCursor(20, 165);
 		tft.println("MENSAJE"); HASTA 10 CARACTERES
+	
+	ESP8266-12E
+		AT Commands Before Flash: http://www.instructables.com/id/ESP-12F-ESP8266-Module-Connection-Test/
+		Para usar el ESP de forma autónoma. Hay que flashearlo con el firmware del NodeMcu, una vez 
+		flasheado. Se puede subir programas desde el sketch de arduino seleccionando como placa "ESP8266 Generic"
+		Para flashearlo hay que descargar este soft:
+			https://github.com/nodemcu/nodemcu-flasher
+		Y bajar el nodemcu_integer_0.9.6-dev_20150704.bin de aca:
+			https://github.com/nodemcu/nodemcu-firmware/releases
+		Las conexiones para realizar el flash son: (utilizar un USB2UART)
+			VCC - > 3.3V 
+			GND - > GND 
+			RX - > TX 
+			TX - > RX
+			CH_PD (EN)- > 3.3V 
+			GPIO15 - > GND
+			GPIO0 (FLASH MODE) -> BUTTON TO GND (Lo reinicio con el boton apretado para poder cargarle un programa)
+			Conviene alimentarlo con una fuente externa, en ese caso conectar el GND del USB2UART al GND de la fuente.
 
+		En el soft selecciono 115200 en baud rate y elijo el bin que baje.
+		https://roboindia.com/tutorials/Flash-esp8266-with-nodemcu-firmware
+		http://www.whatimade.today/loading-the-nodemcu-firmware-on-the-esp8266-windows-guide/
+
+		Puedo programarlo desde el IDE de Arduino o bien desde un soft llamado ESplorer y LUA
+
+		Luego para cargar los programas al ESP debo iniciar el modulo con el GPIO0 sin conectar, y Luego
+		volver a iniciarlo con el GPIO0 en GND.
+
+		
 */
 
 #include "globals.h"
 
 #define DEBUG true // Debug Flag
 
-void showBMPFromName(int x, int y, String name);
+void showBMPFromName(int x, int y, String name, bool center = false);
+void print2LinesMsg(String line1, String line2, int letterSize = 24);
+void printTFT(screenState state, String line1 = "", String line2 = "");
 bool isMifareCard();
+char *getCardID();
 void setup(void);
 void loop(void);
 
@@ -145,29 +176,44 @@ bool isMifareCard()
 
 /** 
   *   @brief  Get the Card ID
-  *  
+  *	  The Card ID are 4 bytes of Hexa (Example: 1A B0 51 CA) Max FF FF FF FF 
+  *   This function convert it to Decimal (base 10) Max 255 255 255 255
+  *
   *   @param  void
-  *   @return (String) return the Card ID in 4 bytes of HEXA
+  *   @return (char []) return the Card ID in decimal without spaces. Max 255255255255
+  *						if number have less than 12 characters, complete with 0s at left
   */
-String getCardID()
+char *getCardID()
 {
 	String aux;
-
+	char cadena[UID_LENGTH];
 	byte letter;
+
+	//Convert Hexa to Dec
 	for (byte i = 0; i < mfrc522.uid.size; i++)
 	{
-		aux.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
-		aux.concat(String(mfrc522.uid.uidByte[i], HEX));
+		aux.concat(String(mfrc522.uid.uidByte[i], DEC));
 		wdt_reset();
 	}
 
-	aux.toUpperCase();
+	//Completo con ceros en el vector a izquierda. Es necesario para que el ESP logre entender el comando
+	for (int i = 0; i < UID_LENGTH; i++)
+	{
+		wdt_reset();
+
+		if (i < UID_LENGTH - aux.length())
+			cadena[i] = '0';
+
+		else
+			cadena[i] = aux[i - (UID_LENGTH - aux.length())];
+	}
+
 #if DEBUG == true
 	Serial.print("Card ID:");
-	Serial.println(aux.substring(1));
+	Serial.println((String)cadena);
 #endif
 	wdt_reset();
-	return aux.substring(1); //Remove a space in the beginning of the string
+	return cadena; //Remove a space in the beginning of the string
 }
 
 /** 
@@ -202,9 +248,10 @@ void readCard()
   *   @param  string bmp name
   *   @param  x x point where start to plot
   *   @param  y y point where start to plot
+  *   @param center (boolean) if center o no. Default=false
   *   @return void
   */
-void showBMPFromName(int x, int y, String name)
+void showBMPFromName(int x, int y, String name, bool center = false)
 {
 	root.rewindDirectory();
 	File f = root.openNextFile();
@@ -226,7 +273,7 @@ void showBMPFromName(int x, int y, String name)
 			Serial.println("Encontrado!");
 #endif
 			wdt_reset();
-			ret = showBMP(namebuf, x, y);
+			ret = showBMP(namebuf, x, y, center);
 			switch (ret)
 			{
 			case 0:
@@ -296,7 +343,7 @@ uint32_t read32(File &f)
   *   @param  y y point where start to plot
   *   @return uint8_t
   */
-uint8_t showBMP(char *nm, int x, int y)
+uint8_t showBMP(char *nm, int x, int y, bool center)
 {
 	File bmpFile;
 	int bmpWidth, bmpHeight;		 // W+H in pixels
@@ -330,6 +377,14 @@ uint8_t showBMP(char *nm, int x, int y)
 	bmpDepth = read16(bmpFile); // bits per pixel
 	pos = read32(bmpFile);		// format
 	wdt_reset();
+
+	//Centro la imagen
+	if (center == true)
+	{
+		x = 160 - bmpWidth / 2;
+		y = 120 - bmpHeight / 2;
+	}
+
 	if (bmpID != 0x4D42)
 		ret = 2; // bad ID
 	else if (n != 1)
@@ -459,7 +514,7 @@ uint8_t showBMP(char *nm, int x, int y)
   *   @param  screenState  (screen to show)
   *   @return void
   */
-void printTFT(screenState state)
+void printTFT(screenState state, String line1 = "", String line2 = "")
 {
 	switch (state)
 	{
@@ -493,18 +548,18 @@ void printTFT(screenState state)
 		break;
 	case OK:
 		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		showBMPFromName(85, 45, "logook");
+		showBMPFromName(0, 0, "logook", true);
 		delay(600);
 		break;
 
 	case ERROR:
 		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		showBMPFromName(85, 45, "logoerror");
+		showBMPFromName(0, 0, "logoerror", true);
 		wdt_reset();
 		delay(600);
 		break;
 	case MENSAJE:
-		print2LinesMsg("HOLA","PROBANDO");
+		print2LinesMsg("HOLA", "PROBANDO");
 		delay(5000);
 		wdt_reset();
 		delay(5000);
@@ -517,33 +572,71 @@ void printTFT(screenState state)
 }
 
 /** 
-  *   @brief  Plot 2 lines in a box
+  *   @brief  Plot 2 lines in a box.
   *  
-  *   @param  line 1 MAX 10 CHAR
-  *   @param  line 2 MAX 10 CHAR
+  *   @param  line 1 
+  *   @param  line 2 
+  *   @param  letterSize 24 (max 10 char) or 18 (max 13 char)
   */
-void print2LinesMsg(String line1, String line2)
+void print2LinesMsg(String line1, String line2, int letterSize = 24)
 {
 	tft.fillScreen(0xFFFFF); //Limpio pantalla
-	tft.setFont(&FreeMonoBold24pt7b);
 	tft.setTextColor(BLACK);
 
-	/*
-	* X=0-10--> margen 10-->310 cuadrado 310-320-->margen
-	* Y=0-45--> margen 45-->195 cuadrado 195-240-->margen
-	*/
-	tft.drawRect(10, 45, 300, 150, BLACK); //(x,y,ancho,largo)
+	if (letterSize == 24)
+	{
+		tft.setFont(&FreeMonoBold24pt7b);
+		/*
+		* X=0-10--> margen 10-->310 cuadrado 310-320-->margen
+		* Y=0-45--> margen 45-->195 cuadrado 195-240-->margen
+		*/
+		tft.drawRect(10, 45, 300, 150, BLACK); //(x,y,ancho,largo)
 
-	/* Cada letra en x me ocupa aprox 28px
-	 * Calculo el x de la primera linea, si tengo 10 caracteres debe ser 20.
-	 * Entonces proporcionalmente hago 20 + la cantidad de caracteres de menos que tengo
-	 * y lo multiplico por 14 (la mitad de 28) asi dejo el mismo margen a izq y a der
-	*/
+		/*Tamaño de letra 24: Max 10 caracteres x linea. Corto el resto*/
+		line1 = line1.substring(0, 10);
+		line2 = line2.substring(0, 10);
 
-	int x1 = 20+(10-line1.length())*14;
-	int x2 =  20+(10-line2.length())*14;
-	tft.setCursor(x1, 105);
-	tft.println(line1);
-	tft.setCursor(x2, 165);
-	tft.println(line2);
+		/* Cada letra en x me ocupa aprox 28px
+		 * Calculo el x de la primera linea, si tengo 10 caracteres debe ser 20.
+		 * Entonces proporcionalmente hago 20 + la cantidad de caracteres de menos que tengo
+		 * y lo multiplico por 14 (la mitad de 28) asi dejo el mismo margen a izq y a der
+		*/
+
+		int x1 = 20 + (10 - line1.length()) * 14;
+		int x2 = 20 + (10 - line2.length()) * 14;
+		tft.setCursor(x1, 105);
+		tft.println(line1);
+		tft.setCursor(x2, 165);
+		tft.println(line2);
+	}
+	else
+	{
+		if (letterSize == 18)
+		{
+			tft.setFont(&FreeMonoBold18pt7b);
+			/*
+			* X=0-10--> margen 10-->310 cuadrado 310-320-->margen
+			* Y=0-45--> margen 45-->195 cuadrado 195-240-->margen
+			*/
+			tft.drawRect(10, 45, 300, 150, BLACK); //(x,y,ancho,largo)
+
+			/*Tamaño de letra 18: Max 13 caracteres x linea. Corto el resto*/
+			line1 = line1.substring(0, 13);
+			line2 = line2.substring(0, 13);
+
+			/* Cada letra en x me ocupa aprox 22px
+			 * Calculo el x de la primera linea, si tengo 13 caracteres debe ser 20.
+			 * Entonces proporcionalmente hago 20 + la cantidad de caracteres de menos que tengo
+			 * y lo multiplico por 11 (la mitad de 22) asi dejo el mismo margen a izq y a der
+			*/
+
+			int x1 = 20 + (13 - line1.length()) * 11;
+			int x2 = 20 + (13 - line2.length()) * 11;
+
+			tft.setCursor(x1, 105);
+			tft.println(line1);
+			tft.setCursor(x2, 165);
+			tft.println(line2);
+		}
+	}
 }
