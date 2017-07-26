@@ -58,8 +58,9 @@
 #define DEBUG true // Debug Flag
 
 void showBMPFromName(int x, int y, String name, bool center = false);
-void print2LinesMsg(String line1, String line2, int letterSize = 24);
-void printTFT(screenState state, String line1 = "", String line2 = "");
+void print2LinesMsg(String line1 = "", String line2 = "", int letterSize = 24);
+void printTFT(screenState state, String line1 = "", String line2 = "", int letterSize = 24);
+void initESP8266();
 bool isMifareCard();
 char *getCardID();
 void setup(void);
@@ -76,11 +77,31 @@ void setup(void)
 	SPI.begin();		// Init SPI bus
 	mfrc522.PCD_Init(); // Init MFRC522 card
 
+	pinMode(ESP8266_RESET_PIN, INPUT); //ESP8266 Reset Button
+	Serial2.begin(9600);			   //ESP8266 uses Serial2
+
 	initTFT();
 
 	//Watchdog 8s
 	wdt_enable(WDTO_8S); // enable watchdog timer with 8 second timeout (max setting)
 						 // wdt will reset the arduino if there is an infinite loop or other hangup; this is a failsafe
+
+	/*Boton de reset del ESP8266. Solo lo toma si se prende el modulo con el boton presionado*/
+	if (digitalRead(ESP8266_RESET_PIN) == HIGH)
+	{
+#if DEBUG == true
+		Serial.println(F("Reseteando..."));
+#endif
+		print2LinesMsg("RESETEANDO", "WIFI");
+		wdt_reset();
+		ESP8266Status = false;
+		sendESP8266Command("RESET_WIFI", 10, "RESET_OK");
+		wdt_reset();
+		sendESP8266Command("RECONNECT_WIFI", 1, "WIFI_OK");
+	}
+
+	initESP8266();
+
 } /*END SETUP*/
 
 void loop(void)
@@ -88,15 +109,30 @@ void loop(void)
 #if DEBUG == true
 	Serial.println("Starting loop...");
 #endif
+
 	printTFT(STANDBY);
 	readCard();
 	if (isMifareCard())
 	{
-		getCardID();
-		printTFT(WAIT);
-		printTFT(OK);
-		printTFT(ERROR);
+		UID_Readed = (String)getCardID();
+		/*Chequeo que si el UID fue el ultimo leido hallan pasado UID_EXPIRE_MS antes de la proxima lectura */
+		if (UID_Readed.indexOf(Last_UID_Readed) != -1 && (millis() - cardStartTime < UID_EXPIRE_MS ))
+		{
+			printTFT(ERROR);
+			printTFT(MENSAJE, "VUELVA A", "INTENTAR");
+			delay(2000);
+		}
+		else
+		{
+			/*....... */
+			cardStartTime = millis();
+			printTFT(WAIT);
+			printTFT(OK);
+			printTFT(ERROR);
+		}
+		Last_UID_Readed = UID_Readed;
 	}
+
 	//RESETEO EL WATCHDOG EN CADA LOOP
 	wdt_reset(); // reset the watchdog timer (once timer is set/reset, next reset pulse must be sent before timeout or arduino reset will occur)
 
@@ -117,14 +153,14 @@ void initTFT()
 	wdt_reset();
 
 #if DEBUG == true
-	Serial.print("ID = 0x");
+	Serial.print(F("TFT ID = 0x"));
 	Serial.println(ID, HEX);
 #endif
 
 	//Inicializo SD
-	bool good = SD.begin(SD_CS);
+	SD_Status = SD.begin(SD_CS);
 	wdt_reset();
-	if (!good)
+	if (!SD_Status)
 	{
 #if DEBUG == true
 		Serial.print(F("cannot start SD"));
@@ -141,6 +177,68 @@ void initTFT()
 	wid = tft.width();
 	ht = tft.height();
 	wdt_reset();
+}
+
+/** 
+  *   @brief  Initialize ESP8266 through serial Commands. Modify ESP8266Status variable
+  *  
+  *   @return void
+  */
+void initESP8266()
+{
+	printTFT(MENSAJE, "CONECTANDO", "WIFI");
+
+	while (!sendESP8266Command("WIFI_STATUS", 130, "WIFI_OK"))
+	{
+		wdt_reset();
+	}
+
+	printTFT(MENSAJE, "CONECTANDO", "A INTERNET");
+	wdt_reset();
+
+	while (!sendESP8266Command("CHECK_CONNECTION", 10, "CONNECTION_OK"))
+	{
+		wdt_reset();
+	}
+
+	ESP8266Status = true;
+	printTFT(MENSAJE, "CONEXION", "OK");
+	delay(1500);
+}
+
+bool sendESP8266Command(String command, int timeout, String responseOK)
+{
+	Serial2.println(command);
+	windowStartTime = millis();
+
+	while (!Serial2.available() && ((millis() - windowStartTime) < timeout * 1000))
+	{
+		wdt_reset();
+	};
+	if (Serial2.available())
+	{
+		recibido = Serial2.readString();
+#if DEBUG == true
+		Serial.print("Recibido por Serial2=");
+		Serial.println(recibido);
+#endif
+		if (recibido.indexOf(responseOK) != -1)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	else
+	{
+#if DEBUG == true
+		Serial.println("Serial2 Timeout");
+#endif
+		return false;
+	}
 }
 
 /** 
@@ -213,7 +311,7 @@ char *getCardID()
 	Serial.println((String)cadena);
 #endif
 	wdt_reset();
-	return cadena; //Remove a space in the beginning of the string
+	return cadena;
 }
 
 /** 
@@ -512,9 +610,12 @@ uint8_t showBMP(char *nm, int x, int y, bool center)
   *   @brief  Plot on the tft display
   *  
   *   @param  screenState  (screen to show)
+  *	  @param line 1
+  *	  @param line 2
+  *	  @param  letterSize 24 (max 10 char) or 18 (max 13 char) per line
   *   @return void
   */
-void printTFT(screenState state, String line1 = "", String line2 = "")
+void printTFT(screenState state, String line1 = "", String line2 = "", int letterSize = 24)
 {
 	switch (state)
 	{
@@ -531,42 +632,67 @@ void printTFT(screenState state, String line1 = "", String line2 = "")
 		tft.setCursor(20, 140);
 		tft.println("SU TARJETA");
 		showBMPFromName(180, 185, "logocespi");
+		wdt_reset();
 		break;
 
 	//Procesando...
 	case WAIT:
 		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		tft.setFont(&FreeMonoBold18pt7b);
-		tft.setTextSize(1);
-		tft.setTextColor(BLACK);
-		tft.drawRect(10, 10, 300, 220, BLACK); //(x,y,ancho,largo)
-		wdt_reset();
-		tft.setCursor(30, 70);
-		tft.println("PROCESANDO...");
-		showBMPFromName(120, 130, "wait");
-		delay(5000);
+		if (SD_Status)			 //Si esta insertada la SD
+		{
+			tft.setFont(&FreeMonoBold18pt7b);
+			tft.setTextSize(1);
+			tft.setTextColor(BLACK);
+			tft.drawRect(10, 10, 300, 220, BLACK); //(x,y,ancho,largo)
+			wdt_reset();
+			tft.setCursor(30, 70);
+			tft.println("PROCESANDO...");
+			showBMPFromName(120, 130, "wait");
+			wdt_reset();
+			delay(5000);
+			wdt_reset();
+		}
+		else
+		{
+			print2LinesMsg("PROCESANDO");
+		}
 		break;
 	case OK:
 		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		showBMPFromName(0, 0, "logook", true);
-		delay(600);
+		if (SD_Status)			 //Si esta insertada la SD
+		{
+			showBMPFromName(0, 0, "logook", true);
+			wdt_reset();
+			delay(600);
+			wdt_reset();
+		}
+		else
+		{
+			print2LinesMsg("OPERACION", "CORRECTA");
+			delay(2000);
+			wdt_reset();
+		}
 		break;
 
 	case ERROR:
 		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		showBMPFromName(0, 0, "logoerror", true);
-		wdt_reset();
-		delay(600);
+		if (SD_Status)			 //Si esta insertada la SD
+		{
+			showBMPFromName(0, 0, "logoerror", true);
+			wdt_reset();
+			delay(600);
+			wdt_reset();
+		}
+		else
+		{
+			print2LinesMsg("ERROR");
+			delay(2000);
+			wdt_reset();
+		}
 		break;
 	case MENSAJE:
-		print2LinesMsg("HOLA", "PROBANDO");
-		delay(5000);
+		print2LinesMsg(line1, line2, letterSize);
 		wdt_reset();
-		delay(5000);
-		wdt_reset();
-		delay(5000);
-		wdt_reset();
-
 		break;
 	}
 }
@@ -576,9 +702,9 @@ void printTFT(screenState state, String line1 = "", String line2 = "")
   *  
   *   @param  line 1 
   *   @param  line 2 
-  *   @param  letterSize 24 (max 10 char) or 18 (max 13 char)
+  *   @param  letterSize 24 (max 10 char) or 18 (max 13 char) per line
   */
-void print2LinesMsg(String line1, String line2, int letterSize = 24)
+void print2LinesMsg(String line1 = "", String line2 = "", int letterSize = 24)
 {
 	tft.fillScreen(0xFFFFF); //Limpio pantalla
 	tft.setTextColor(BLACK);

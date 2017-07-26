@@ -15,19 +15,28 @@ bool WiFi_Status = false;
 HTTPClient http;
 WiFiManager wifiManager;
 byte httpCode, aux, indice;
-unsigned int cardUID;
+unsigned long cardUID;
 
 /*
  *  Set de Comandos:
+ * 
+ *    Chequea el serial. Simil al comando "AT"  
+ *    Comando: ESP
+ *    Respuesta: OK   
+ *
+ *    Chequea si esta conectado al WiFi o no.  
  *    Comando: WIFI_STATUS
  *    Respuesta: WIFI_FAIL / WIFI_OK
- *
- *    Comando: CHECK_CONNECTION
+ *    
+ *    Chequea si hay conexión a internet o no.
+ *    Comando: CHECK_CONNECTION   
  *    Respuesta: CONNECTION_OK / CONNECTION_FAIL
- *
+ *  
+ *    Reconecta al WiFi
  *    Comando: RECONNECT_WIFI
  *    Respuesta: WIFI_FAIL / WIFI_OK
  *  
+ *    Borra SSID y password guardados en EEPROM.
  *    Comando: RESET_WIFI
  *    Respuesta: RESET_OK.Luego de este comando hay que utilizar el comando RECONNECT_WIFI
  *
@@ -36,9 +45,7 @@ unsigned int cardUID;
 */
 void setup()
 {
-  // put your setup code here, to run once:
   Serial.begin(9600);
-
 
   /*Salida de debugging del portal de configuracion*/
   wifiManager.setDebugOutput(false);
@@ -75,7 +82,7 @@ void setup()
 void loop()
 {
 
-  /*Se queda esperando que le llegue un comando*/
+  /*Bloqueante. Se queda esperando que le llegue un comando*/
   while (!Serial.available())
   {
   };
@@ -93,10 +100,18 @@ void loop()
   {
     if (recibido.indexOf(F("CHECK_CONNECTION")) != -1)
     {
+      
       http.begin("http://jsonplaceholder.typicode.com/users/1");
       httpCode = http.GET();
       payload = http.getString();
       http.end();
+      
+      /*
+      http.begin("http://api.thingspeak.com/update?api_key=W7ZBYXPR3FIY2SOF&field1=10");
+      httpCode = http.GET();
+      payload = http.getString();
+      http.end();
+      */
       if (httpCode > 0)
       {
         Serial.println(F("CONNECTION_OK"));
@@ -113,7 +128,15 @@ void loop()
         WiFi_Status = false;
         while (!wifiManager.autoConnect("WiFi_Terminal_RFID", "cespi"))
         {
-          Serial.println(F("WIFI_FAIL"));
+          //Codigo que se ejecuta cada "wifiManager.setTimeout(120)" mientras no se conecta a un wifi
+          if (Serial.available())
+          {
+            recibido = Serial.readString();
+            if (recibido.indexOf(F("WIFI_STATUS")) != -1)
+            {
+              Serial.println(F("WIFI_FAIL"));
+            }
+          }
         }
         Serial.println(F("WIFI_OK"));
         WiFi_Status = true;
@@ -131,7 +154,7 @@ void loop()
           if (recibido.indexOf(F("CARD_UID")) != -1)
           {
             //Procesar terjeta
-            UID="";
+            UID = "";
             aux = 0;
             indice = 0;
             while (recibido[indice] != '=')
@@ -146,12 +169,19 @@ void loop()
               indice++;
             }
 
-            cardUID =UID.toInt();
+            cardUID = UID.toInt();
             Serial.println(cardUID);
           }
           else
           {
-            Serial.println(F("INCORRECT COMMAND"));
+            if (recibido.indexOf(F("ESP")) != -1)
+            {
+              Serial.println(F("OK"));
+            }
+            else
+            {
+              Serial.println(F("INCORRECT COMMAND"));
+            }
           }
         }
       }

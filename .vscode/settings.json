@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "spiffs_gc.c": "cpp",
+        "core_esp8266_wiring_digital.c": "cpp",
+        "core_esp8266_wiring.c": "cpp"
+    }
+}

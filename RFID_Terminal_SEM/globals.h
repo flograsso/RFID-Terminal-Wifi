@@ -28,8 +28,14 @@
 #define SDA_PIN             31          //SPI SS CHIP SELECT = 31
 
 #define UID_LENGTH 12                   //UID MAX LENGTH
+#define UID_EXPIRE_MS 15000             //(ms) tiempo entre lecturas sucesivas del mismo UID
 
 MFRC522 mfrc522(SDA_PIN, RST_PIN);   // Create MFRC522 instance.
+
+String UID_Readed;
+String Last_UID_Readed="ABCDETY";
+unsigned long cardStartTime = 0;
+
 
 /*TFT DISPLAY*/
 /*
@@ -77,6 +83,7 @@ int pathlen;
 char *nm;
 uint16_t dx, rgb, n, wid, ht, msglin;
 uint16_t ID;
+bool SD_Status = false;
 
 #include "Fonts/FreeMonoBold24pt7b.h"
 #include "Fonts/FreeMonoBold18pt7b.h"
@@ -102,6 +109,29 @@ enum screenState {
     MENSAJE
 };
 
+/*ESP8266*/
+/*
+ 
+ * VCC                  3.3V  (extern power supply)      
+ * GND                  GND   (extern power supply)          
+ * CH_PD (EN)           3.3V  (extern power supply)
+ * GPIO15               GND   (extern power supply)  
+ * GPIO0 (FLASH MODE)   GND   (only to load program)   
+ * * -----------------------------------------------------------------------------------------
+ *     ESP8266    Arduino Mega        
+ *     Pin          Pin          
+ * -----------------------------------------------------------------------------------------
+ * RX               TX2 (D17)
+ * TX               RX2 (D16)
+
+ * CONNECT GND FROM EXTERN POWER SUPPLY TO ARDUINO MEGA GND PIN
+
+*/
+
+bool ESP8266Status = false;
+String recibido = "";
+unsigned long windowStartTime = 0;
+#define ESP8266_RESET_PIN 22
 
 
 #endif
