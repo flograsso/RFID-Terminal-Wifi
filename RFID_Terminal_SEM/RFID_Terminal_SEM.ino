@@ -34,6 +34,7 @@
 		Las conexiones para realizar el flash son: (utilizar un USB2UART)
 			VCC - > 3.3V 
 			GND - > GND 
+			RST - >23
 			RX - > TX 
 			TX - > RX
 			CH_PD (EN)- > 3.3V 
@@ -63,6 +64,7 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 void initESP8266();
 bool isMifareCard();
 char *getCardID();
+void ESP8266Reset();
 void setup(void);
 void loop(void);
 
@@ -77,8 +79,11 @@ void setup(void)
 	SPI.begin();		// Init SPI bus
 	mfrc522.PCD_Init(); // Init MFRC522 card
 
-	pinMode(ESP8266_RESET_PIN, INPUT); //ESP8266 Reset Button
-	Serial2.begin(9600);			   //ESP8266 uses Serial2
+	pinMode(ESP8266_SSID_RESET_PIN, INPUT); //ESP8266 SSID Reset Button
+	pinMode(ESP8266_RESET_PIN, OUTPUT); 	//ESP8266 Hardware Reset Pin
+	digitalWrite(ESP8266_RESET_PIN,HIGH);	
+
+	Serial2.begin(9600);			   	//ESP8266 uses Serial2
 
 	initTFT();
 
@@ -87,7 +92,7 @@ void setup(void)
 						 // wdt will reset the arduino if there is an infinite loop or other hangup; this is a failsafe
 
 	/*Boton de reset del ESP8266. Solo lo toma si se prende el modulo con el boton presionado*/
-	if (digitalRead(ESP8266_RESET_PIN) == HIGH)
+	if (digitalRead(ESP8266_SSID_RESET_PIN) == HIGH)
 	{
 #if DEBUG == true
 		Serial.println(F("Reseteando..."));
@@ -114,9 +119,9 @@ void loop(void)
 	readCard();
 	if (isMifareCard())
 	{
-		UID_Readed = (String)getCardID();
+		UID_Readed = ((String)getCardID()).toInt();
 		/*Chequeo que si el UID fue el ultimo leido hallan pasado UID_EXPIRE_MS antes de la proxima lectura */
-		if (UID_Readed.indexOf(Last_UID_Readed) != -1 && (millis() - cardStartTime < UID_EXPIRE_MS ))
+		if (UID_Readed==Last_UID_Readed && (millis() - cardStartTime < UID_EXPIRE_MS ))
 		{
 			printTFT(ERROR);
 			printTFT(MENSAJE, "VUELVA A", "INTENTAR");
@@ -137,6 +142,19 @@ void loop(void)
 	wdt_reset(); // reset the watchdog timer (once timer is set/reset, next reset pulse must be sent before timeout or arduino reset will occur)
 
 } /*END LOOP*/
+
+
+/** 
+  *   @brief  ESP8266 Hardware reset.
+  *  
+  *   @return void
+  */
+void ESP8266Reset()
+{
+	digitalWrite(ESP8266_RESET_PIN,LOW);
+	delay (800);
+	digitalWrite(ESP8266_RESET_PIN,HIGH);
+}
 
 /** 
   *   @brief  Initialize TFT screen
@@ -186,6 +204,8 @@ void initTFT()
   */
 void initESP8266()
 {
+	ESP8266Reset();
+
 	printTFT(MENSAJE, "CONECTANDO", "WIFI");
 
 	while (!sendESP8266Command("WIFI_STATUS", 130, "WIFI_OK"))

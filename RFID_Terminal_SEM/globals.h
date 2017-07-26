@@ -32,8 +32,8 @@
 
 MFRC522 mfrc522(SDA_PIN, RST_PIN);   // Create MFRC522 instance.
 
-String UID_Readed;
-String Last_UID_Readed="ABCDETY";
+unsigned long UID_Readed;
+unsigned long Last_UID_Readed="ABCDETY";
 unsigned long cardStartTime = 0;
 
 
@@ -123,7 +123,13 @@ enum screenState {
  * -----------------------------------------------------------------------------------------
  * RX               TX2 (D17)
  * TX               RX2 (D16)
+ * RST              D23
 
+
+ * SSID RESET BUTTON:
+ *  PIN A BUTTON = VCC
+ *  PIN B BUTTON = D22 ARDUINO MEGA PIN & GND THROUGH A RESISTANCE
+ *
  * CONNECT GND FROM EXTERN POWER SUPPLY TO ARDUINO MEGA GND PIN
 
 */
@@ -131,7 +137,8 @@ enum screenState {
 bool ESP8266Status = false;
 String recibido = "";
 unsigned long windowStartTime = 0;
-#define ESP8266_RESET_PIN 22
+#define ESP8266_SSID_RESET_PIN 22
+#define ESP8266_RESET_PIN      23
 
 
 #endif
