@@ -12,16 +12,10 @@
 	in the card. We can modifiy it in the Mifare Classic Cards (in specials card we can do it)
 
 	TFT: 
+	240x320
+	CHIP: S6D0154
 	Si uso la font default el x,y al escibir es la esq sup izq del txt pero si cambio la font
 	el x,y pasado es el de la izq inferior. En la letra FreeMonoBold18pt7b arrancaria en x=0 e y=25
-	La pantalla comienza en:
-		Para Imagen y drawRect x=0 e y=0
-	Configuracion para mensaje de 2 lineas:
-		tft.drawRect(10, 45, 300, 150, BLACK); //(x,y,ancho,largo)
-		tft.setCursor(20, 105);
-		tft.println("MENSAJE"); HASTA 10 CARACTERES
-		tft.setCursor(20, 165);
-		tft.println("MENSAJE"); HASTA 10 CARACTERES
 	
 	ESP8266-12E
 		AT Commands Before Flash: http://www.instructables.com/id/ESP-12F-ESP8266-Module-Connection-Test/
@@ -64,7 +58,7 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 void initESP8266();
 bool isMifareCard();
 char *getCardID();
-void ESP8266Reset();
+void ESP8266HardwareReset();
 void setup(void);
 void loop(void);
 
@@ -76,22 +70,25 @@ void setup(void)
 	Serial.println("Init...");
 #endif
 
-	SPI.begin();		// Init SPI bus
+	SPI.begin();		// Init SPI bus (para lector RFID y SD)
 	mfrc522.PCD_Init(); // Init MFRC522 card
 
 	pinMode(ESP8266_SSID_RESET_PIN, INPUT); //ESP8266 SSID Reset Button
-	pinMode(ESP8266_RESET_PIN, OUTPUT); 	//ESP8266 Hardware Reset Pin
-	digitalWrite(ESP8266_RESET_PIN,HIGH);	
 
-	Serial2.begin(9600);			   	//ESP8266 uses Serial2
+	pinMode(ESP8266_RESET_PIN, OUTPUT);	//ESP8266 Hardware Reset Pin
+	digitalWrite(ESP8266_RESET_PIN, HIGH); //Init ESP8266 Hardware Reset Pin
 
-	initTFT();
+	Serial2.begin(9600); //ESP8266 uses Serial2
+
+	initTFT(); //Init TFT
 
 	//Watchdog 8s
 	wdt_enable(WDTO_8S); // enable watchdog timer with 8 second timeout (max setting)
-						 // wdt will reset the arduino if there is an infinite loop or other hangup; this is a failsafe
+						 // wdt will reset the arduino if there is an infinite loop
+						 //or other hangup; this is a failsafe
 
-	/*Boton de reset del ESP8266. Solo lo toma si se prende el modulo con el boton presionado*/
+	//Boton fisico colocado para resetear el SSID. Envia comando de RESET al ESP8266
+	//Solo lo toma si se prende el modulo con el boton presionado
 	if (digitalRead(ESP8266_SSID_RESET_PIN) == HIGH)
 	{
 #if DEBUG == true
@@ -105,34 +102,48 @@ void setup(void)
 		sendESP8266Command("RECONNECT_WIFI", 1, "WIFI_OK");
 	}
 
-	initESP8266();
+	initESP8266(); //Inicializo el ESP8266
 
-} /*END SETUP*/
+} //END SETUP 
 
 void loop(void)
 {
+
 #if DEBUG == true
 	Serial.println("Starting loop...");
 #endif
 
 	printTFT(STANDBY);
+	
+	//Funcion bloqueante. Hasta no leer no sale de aca.
 	readCard();
+
 	if (isMifareCard())
 	{
 		UID_Readed = ((String)getCardID()).toInt();
-		/*Chequeo que si el UID fue el ultimo leido hallan pasado UID_EXPIRE_MS antes de la proxima lectura */
-		if (UID_Readed==Last_UID_Readed && (millis() - cardStartTime < UID_EXPIRE_MS ))
+
+		//Chequeo que el UID leido sea distinto al leido en la ultima pasada.
+		//En caso afirmativo, chequeo que haya transcurrido UID_EXPIRE_MS para proceder.
+		if (UID_Readed == Last_UID_Readed && (millis() - cardStartTime < UID_EXPIRE_MS))
 		{
+			//Tarjeta ya leida.
 			printTFT(ERROR);
 			printTFT(MENSAJE, "VUELVA A", "INTENTAR");
 			delay(2000);
 		}
 		else
 		{
-			/*....... */
-			cardStartTime = millis();
-			printTFT(WAIT);
+			//Tarjeta OK. Procesamiento del UID...
+
+			cardStartTime = millis();				//Reseteo el tiempo de la ult tarjeta leida
+
+			printTFT(WAIT);							//Pantalla de esperando
+
+			//if (procesamiento) que si falla rechequeo conexion al wifi y se queda loopeando ahi si falla
+			//mostrando "fuera de servicio"
 			printTFT(OK);
+
+			//else
 			printTFT(ERROR);
 		}
 		Last_UID_Readed = UID_Readed;
@@ -141,19 +152,18 @@ void loop(void)
 	//RESETEO EL WATCHDOG EN CADA LOOP
 	wdt_reset(); // reset the watchdog timer (once timer is set/reset, next reset pulse must be sent before timeout or arduino reset will occur)
 
-} /*END LOOP*/
-
+} //END LOOP
 
 /** 
-  *   @brief  ESP8266 Hardware reset.
+  *   @brief  ESP8266 Hardware reset. Put ESP8266_RESET_PIN in LOW for 800ms
   *  
   *   @return void
   */
-void ESP8266Reset()
+void ESP8266HardwareReset()
 {
-	digitalWrite(ESP8266_RESET_PIN,LOW);
-	delay (800);
-	digitalWrite(ESP8266_RESET_PIN,HIGH);
+	digitalWrite(ESP8266_RESET_PIN, LOW);
+	delay(800);
+	digitalWrite(ESP8266_RESET_PIN, HIGH);
 }
 
 /** 
@@ -175,19 +185,15 @@ void initTFT()
 	Serial.println(ID, HEX);
 #endif
 
-	//Inicializo SD
-	SD_Status = SD.begin(SD_CS);
+	SD_Status = SD.begin(SD_CS); //Inicializo SD
 	wdt_reset();
-	if (!SD_Status)
-	{
+
 #if DEBUG == true
+	if (!SD_Status)
 		Serial.print(F("cannot start SD"));
 #endif
-		//PONER UN BACKUP EN TXT SI NO INICIA SD
-	}
 
-	//Leo la carpeta
-	root = SD.open(namebuf);
+	root = SD.open(namebuf); //Leo la carpeta base
 	pathlen = strlen(namebuf);
 	nm = namebuf + pathlen;
 
@@ -204,11 +210,16 @@ void initTFT()
   */
 void initESP8266()
 {
-	ESP8266Reset();
-
 	printTFT(MENSAJE, "CONECTANDO", "WIFI");
 
-	while (!sendESP8266Command("WIFI_STATUS", 130, "WIFI_OK"))
+	if (!sendESP8266Command("WIFI_STATUS", 3, "WIFI_OK") 		//Si no tiene la SSID guardada y conecta al 
+																//inicio lo reseteo.
+	{
+		ESP8266HardwareReset();
+	}
+	
+	while (!sendESP8266Command("WIFI_STATUS", 130, "WIFI_OK"))	//Me quedo esperando a que se conecte 
+																//o se setee el SSID por portal.
 	{
 		wdt_reset();
 	}
@@ -216,7 +227,7 @@ void initESP8266()
 	printTFT(MENSAJE, "CONECTANDO", "A INTERNET");
 	wdt_reset();
 
-	while (!sendESP8266Command("CHECK_CONNECTION", 10, "CONNECTION_OK"))
+	while (!sendESP8266Command("CHECK_CONNECTION", 10, "CONNECTION_OK"))	//Reviso conexion a internet.
 	{
 		wdt_reset();
 	}
@@ -226,6 +237,15 @@ void initESP8266()
 	delay(1500);
 }
 
+/** 
+  *   @brief  Send command to ESP8266 through Serial2 and read response
+  *  
+  *   @param  (String) 	command
+  *   @param  (int)		timeout
+  *   @param  (String)	responseOK 
+  * 
+  *   @return (bool) if response are equal to responseOK
+  */
 bool sendESP8266Command(String command, int timeout, String responseOK)
 {
 	Serial2.println(command);
@@ -335,14 +355,14 @@ char *getCardID()
 }
 
 /** 
-  *   @brief  Read a RFID Card  
+  *   @brief  Read a RFID Card. Block function until reads a tag.
   *  
   *   @param  void
   *   @return void
   */
 void readCard()
 {
-	// Look for new cards
+	// Funcion bloqueante. Hasta que no lee tarjeta loopea.
 	while (!mfrc522.PICC_IsNewCardPresent())
 	{
 		wdt_reset();
@@ -366,7 +386,7 @@ void readCard()
   *   @param  string bmp name
   *   @param  x x point where start to plot
   *   @param  y y point where start to plot
-  *   @param center (boolean) if center o no. Default=false
+  *   @param center (boolean) if center o no. <default=false>
   *   @return void
   */
 void showBMPFromName(int x, int y, String name, bool center = false)
@@ -629,10 +649,11 @@ uint8_t showBMP(char *nm, int x, int y, bool center)
 /** 
   *   @brief  Plot on the tft display
   *  
-  *   @param  screenState  (screen to show)
-  *	  @param line 1
-  *	  @param line 2
-  *	  @param  letterSize 24 (max 10 char) or 18 (max 13 char) per line
+  *   @param  	screenState  screen to show
+  *	  @param 	line 1 														<default=blank>
+  *	  @param 	line 2														<default=blank>
+  *	  @param 	letterSize 24 (max 10 char) or 18 (max 13 char) per line	<default=24>
+  *
   *   @return void
   */
 void printTFT(screenState state, String line1 = "", String line2 = "", int letterSize = 24)
@@ -641,8 +662,8 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 	{
 	//Esperando una tarjeta...
 	case STANDBY:
-		tft.fillScreen(0xFFFFF);			   //Limpio pantalla
-		tft.drawRect(10, 10, 300, 170, BLACK); //(x,y,ancho,largo)
+		tft.fillScreen(0xFFFFF);			   			//Limpio pantalla
+		tft.drawRect(10, 10, 300, 170, BLACK); 			//Dibujo rectangulo
 		tft.setFont(&FreeMonoBold24pt7b);
 		tft.setTextSize(1);
 		tft.setTextColor(BLACK);
@@ -655,31 +676,33 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 		wdt_reset();
 		break;
 
-	//Procesando...
+	//Logo de "Procesando..."
 	case WAIT:
-		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		if (SD_Status)			 //Si esta insertada la SD
+		tft.fillScreen(0xFFFFF); 						//Limpio pantalla
+		if (SD_Status)			 						//Si esta insertada la SD
 		{
 			tft.setFont(&FreeMonoBold18pt7b);
 			tft.setTextSize(1);
 			tft.setTextColor(BLACK);
-			tft.drawRect(10, 10, 300, 220, BLACK); //(x,y,ancho,largo)
+			tft.drawRect(10, 10, 300, 220, BLACK); 		//Dibujo rectangulo
 			wdt_reset();
 			tft.setCursor(30, 70);
 			tft.println("PROCESANDO...");
 			showBMPFromName(120, 130, "wait");
 			wdt_reset();
-			delay(5000);
+			delay(1000);
 			wdt_reset();
 		}
-		else
+		else											//Si no esta insertada la SD solo muestro texto.
 		{
 			print2LinesMsg("PROCESANDO");
 		}
 		break;
+	
+	//Logo OK
 	case OK:
-		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		if (SD_Status)			 //Si esta insertada la SD
+		tft.fillScreen(0xFFFFF); 						//Limpio pantalla
+		if (SD_Status)			 						//Si esta insertada la SD
 		{
 			showBMPFromName(0, 0, "logook", true);
 			wdt_reset();
@@ -688,15 +711,16 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 		}
 		else
 		{
-			print2LinesMsg("OPERACION", "CORRECTA");
+			print2LinesMsg("OPERACION", "CORRECTA");	//Si no esta insertada la SD solo muestro texto.
 			delay(2000);
 			wdt_reset();
 		}
 		break;
 
+	//Logo ERROR
 	case ERROR:
-		tft.fillScreen(0xFFFFF); //Limpio pantalla
-		if (SD_Status)			 //Si esta insertada la SD
+		tft.fillScreen(0xFFFFF); 						//Limpio pantalla
+		if (SD_Status)			 						//Si esta insertada la SD
 		{
 			showBMPFromName(0, 0, "logoerror", true);
 			wdt_reset();
@@ -705,11 +729,13 @@ void printTFT(screenState state, String line1 = "", String line2 = "", int lette
 		}
 		else
 		{
-			print2LinesMsg("ERROR");
+			print2LinesMsg("ERROR");					//Si no esta insertada la SD solo muestro texto.
 			delay(2000);
 			wdt_reset();
 		}
 		break;
+	
+	//Muestro un mensaje
 	case MENSAJE:
 		print2LinesMsg(line1, line2, letterSize);
 		wdt_reset();
@@ -784,5 +810,49 @@ void print2LinesMsg(String line1 = "", String line2 = "", int letterSize = 24)
 			tft.setCursor(x2, 165);
 			tft.println(line2);
 		}
+	}
+}
+
+void systemDemo()
+{
+	printTFT(STANDBY);
+	readCard();
+	if (isMifareCard())
+	{
+		UID_Readed = ((String)getCardID()).toInt();
+		/*Chequeo que si el UID fue el ultimo leido hallan pasado UID_EXPIRE_MS antes de la proxima lectura */
+		if (UID_Readed == Last_UID_Readed && (millis() - cardStartTime < UID_EXPIRE_MS))
+		{
+			printTFT(ERROR);
+			printTFT(MENSAJE, "VUELVA A", "INTENTAR");
+			delay(2000);
+		}
+		else
+		{
+			cardStartTime = millis();
+			printTFT(WAIT);
+			switch (demoVariable)
+			{
+			case 0:
+				printTFT(OK);
+				printTFT(MENSAJE, "ESTACIONAM", "INICIADO");
+				delay(4500);
+				demoVariable = 1;
+				break;
+			case 1:
+				printTFT(ERROR);
+				printTFT(MENSAJE, "SALDO", "INSUFICIENTE", 18);
+				demoVariable = 2;
+				delay(4500);
+				break;
+			case 2:
+				printTFT(ERROR);
+				printTFT(MENSAJE, "ESTACIONAMIEN", "NO REQUERIDO", 18);
+				demoVariable = 0;
+				delay(4500);
+				break;
+			}
+		}
+		Last_UID_Readed = UID_Readed;
 	}
 }

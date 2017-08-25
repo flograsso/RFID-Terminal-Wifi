@@ -6,6 +6,7 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h> //https://github.com/tzapu/WiFiManager
 #include <ESP8266HTTPClient.h>
+#include "phrases.h"
 
 #define DEBUG true
 #define UID_LENGTH 12
@@ -18,30 +19,30 @@ byte httpCode, aux, indice;
 unsigned long cardUID;
 
 /*
- *  Set de Comandos:
- * 
- *    Chequea el serial. Simil al comando "AT"  
- *    Comando: ESP
- *    Respuesta: OK   
- *
- *    Chequea si esta conectado al WiFi o no.  
- *    Comando: WIFI_STATUS
- *    Respuesta: WIFI_FAIL / WIFI_OK
- *    
- *    Chequea si hay conexión a internet o no.
- *    Comando: CHECK_CONNECTION   
- *    Respuesta: CONNECTION_OK / CONNECTION_FAIL
- *  
- *    Reconecta al WiFi
- *    Comando: RECONNECT_WIFI
- *    Respuesta: WIFI_FAIL / WIFI_OK
- *  
- *    Borra SSID y password guardados en EEPROM.
- *    Comando: RESET_WIFI
- *    Respuesta: RESET_OK.Luego de este comando hay que utilizar el comando RECONNECT_WIFI
- *
- *    Comando: CARD_UID. Formato: CARD_UID=(12 digitos); Ex: CARD_UID=123456789123; CARD_UID=000056789123;
- *             Si no recibe los 12 digitos funciona mal.
+    Set de Comandos:
+
+      Chequea el serial. Simil al comando "AT"
+      Comando: ESP
+      Respuesta: OK
+
+      Chequea si esta conectado al WiFi o no.
+      Comando: WIFI_STATUS
+      Respuesta: WIFI_FAIL / WIFI_OK
+
+      Chequea si hay conexión a internet o no.
+      Comando: CHECK_CONNECTION
+      Respuesta: CONNECTION_OK / CONNECTION_FAIL
+
+      Reconecta al WiFi
+      Comando: RECONNECT_WIFI
+      Respuesta: WIFI_FAIL / WIFI_OK
+
+      Borra SSID y password guardados en EEPROM.
+      Comando: RESET_WIFI
+      Respuesta: RESET_OK.Luego de este comando hay que utilizar el comando RECONNECT_WIFI
+
+      Comando: CARD_UID. Formato: CARD_UID=(12 digitos); Ex: CARD_UID=123456789123; CARD_UID=000056789123;
+               Si no recibe los 12 digitos funciona mal.
 */
 void setup()
 {
@@ -57,10 +58,10 @@ void setup()
   //wifiManager.resetSettings();
 
   /*Intenta conectar al SSID guardado en la EEPROM y sino crea un AP con el SSID=WiFi_Terminal_RFID
-  el cual, al estar conectado a él, me permite configurar la red wifi a la cual me quiero conectar 
-  Para ello debo entrar a la IP 192.168.4.1 o a algun sitio web HTTP (no HTTPS) para que actue el DNS 
-  del módulo y me rediriga hacia la anterior IP. La funcion es bloqueante, no devuelve el control
-  hasta que se conecta a una red o pasa el tiempo de timeout.*/
+    el cual, al estar conectado a él, me permite configurar la red wifi a la cual me quiero conectar
+    Para ello debo entrar a la IP 192.168.4.1 o a algun sitio web HTTP (no HTTPS) para que actue el DNS
+    del módulo y me rediriga hacia la anterior IP. La funcion es bloqueante, no devuelve el control
+    hasta que se conecta a una red o pasa el tiempo de timeout.*/
   while (!wifiManager.autoConnect("WiFi_Terminal_RFID", "cespi"))
   {
     //Codigo que se ejecuta cada "wifiManager.setTimeout(120)" mientras no se conecta a un wifi
@@ -100,17 +101,17 @@ void loop()
   {
     if (recibido.indexOf(F("CHECK_CONNECTION")) != -1)
     {
-      
+
       http.begin("http://jsonplaceholder.typicode.com/users/1");
       httpCode = http.GET();
       payload = http.getString();
       http.end();
-      
+
       /*
-      http.begin("http://api.thingspeak.com/update?api_key=W7ZBYXPR3FIY2SOF&field1=10");
-      httpCode = http.GET();
-      payload = http.getString();
-      http.end();
+        http.begin("http://api.thingspeak.com/update?api_key=W7ZBYXPR3FIY2SOF&field1=10");
+        httpCode = http.GET();
+        payload = http.getString();
+        http.end();
       */
       if (httpCode > 0)
       {
@@ -171,6 +172,19 @@ void loop()
 
             cardUID = UID.toInt();
             Serial.println(cardUID);
+            http.begin(serverURL);
+            http.addHeader(header1,header2);
+            httpCode = http.POST("arg1=value1&arg2=value2");
+            payload = http.getString();
+            if (httpCode > 0)
+            {
+              Serial.println(F("CONNECTION_OK"));
+              Serial.println(payload);
+            }
+            else
+            {
+              Serial.println(F("CONNECTION_FAIL"));
+            }
           }
           else
           {
@@ -189,19 +203,19 @@ void loop()
   }
 
   /*
-  HTTPClient http;
-  http.begin("http://jsonplaceholder.typicode.com/users/1");
-  int httpCode = http.GET();
-  String payload = http.getString();
-  Serial.println(payload);
-  DynamicJsonBuffer jsonBuffer(1024);
-  JsonObject &root = jsonBuffer.parseObject(payload);
+    HTTPClient http;
+    http.begin("http://jsonplaceholder.typicode.com/users/1");
+    int httpCode = http.GET();
+    String payload = http.getString();
+    Serial.println(payload);
+    DynamicJsonBuffer jsonBuffer(1024);
+    JsonObject &root = jsonBuffer.parseObject(payload);
 
-  char a1[32];
-  strcpy(a1, root["name"]);
-  Serial.println(a1);
+    char a1[32];
+    strcpy(a1, root["name"]);
+    Serial.println(a1);
 
-  http.end();
-  delay(30000); //Send a request every 30 seconds
+    http.end();
+    delay(30000); //Send a request every 30 seconds
   */
 }

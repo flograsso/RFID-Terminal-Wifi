@@ -141,4 +141,7 @@ unsigned long windowStartTime = 0;
 #define ESP8266_RESET_PIN      23
 
 
+
+int demoVariable=0;
+
 #endif
