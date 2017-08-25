@@ -83,7 +83,7 @@ void setup()
 void loop()
 {
 
-  /*Bloqueante. Se queda esperando que le llegue un comando*/
+  /*Bloqueante. Se queda esperando que le llegue un comfando*/
   while (!Serial.available())
   {
   };
